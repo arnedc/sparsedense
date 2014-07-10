@@ -1,0 +1,40 @@
+/Default input file for parreml.
+/Comment lines are started with a 'slash', /
+/The order of the parameters is not important, but some are mandatory.
+/filenames can start with a slash to include absolute paths.
+
+/Number of observations (mandatory)
+#Observations
+1000
+
+/Number of SNPs (mandatory)
+#DenseEffects
+1000
+
+/Number of other random effects (mandatory)
+#RandomEffects
+2284
+
+/Filename of the Dense data file (T) (mandatory in binary format)
+#DenseDataFile
+geno.bin
+
+/Filename of the sparse random effects data file (Z) (mandatory in csr format)
+#RandDataFile
+Z_small_dense.csr
+
+/number of fixed effects (mandatory)
+#FixedEffects
+30
+
+/filename of the incidence matrix of the fixed effects (csr, mandatory) 
+#FileFixedEffects
+X_small_dense2.csr
+
+/size of the blocks in which the matrix is distributed (optional, default=64)
+#BlockSize
+64
+
+/start value of variance parameter to be estimated (optional, default=100)
+#Lambda
+100
