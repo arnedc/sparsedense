@@ -138,8 +138,8 @@ void mult_colsA_colsC ( CSRdouble& A, double *B, int lld_B, int Acolstart, int A
     int i, j,row, col, C_nnz,C_ncols, *prows;
     double cij;
 
-    assert(Cncols < lld_B);
-    assert(Ccolstart+Cncols <= C.ncols);
+    /*assert(Cncols < lld_B);
+    assert(Ccolstart+Cncols <= C.ncols);*/
 
     C_ncols=C.ncols;
 
