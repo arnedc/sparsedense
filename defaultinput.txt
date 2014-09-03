@@ -38,3 +38,7 @@ Xmatrix.csr
 /start value of variance parameter to be estimated (optional, default=100)
 #Lambda
 100
+
+/If dense matrix D should be printed to a binary file, the filename should be given here (optional)
+#OutputFileD
+matrixD.bin
