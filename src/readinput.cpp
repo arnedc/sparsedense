@@ -16,9 +16,11 @@ int read_input ( char * filename ) {
     filenameT= ( char* ) calloc ( 100,sizeof ( char ) );
     filenameX= ( char* ) calloc ( 100,sizeof ( char ) );
     filenameZ= ( char* ) calloc ( 100,sizeof ( char ) );
+    filenameD= ( char* ) calloc ( 100,sizeof ( char ) );
 
     lambda=100;
     blocksize=64;
+    printD_bool=false;
 
 
     while ( std::getline ( inputfile,line ) ) {
@@ -58,6 +60,10 @@ int read_input ( char * filename ) {
             std::getline ( inputfile,line );
             blocksize=atoi ( line.c_str() );
             blocksize_bool=true;
+	} else if ( line=="#OutputFileD" ) {
+            std::getline ( inputfile,line );
+            line.copy ( filenameD,100 );;
+            printD_bool=true;
         } else if ( line[0]=='/' || line.size() ==0 ) {}
         else {
             printf ( "Unknown parameter in inputfile, the following line was ignored: \n" );
@@ -118,6 +124,8 @@ int read_input ( char * filename ) {
             printf ( "Start value of %g was used to estimate variance component lambda\n", lambda );
         else
             printf ( "Default start value of %g was used to estimate variance component lambda\n", lambda );
+	if ( printD_bool )
+	  printf("Matrix D will be written to binaray file %s \n", filenameD);
     }
     return 0;
 }

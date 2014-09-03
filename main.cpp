@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+//#include <mpi.h>
 #include "src/shared_var.h"
 #include "src/config.hpp"
 #include "src/CSRdouble.hpp"
@@ -13,7 +14,15 @@ extern "C" {
     int MPI_Finalize(void);
     int MPI_Dims_create(int, int, int *);
     int MPI_Barrier( MPI_Comm comm );
+    int MPI_Type_create_darray(int, int, int, int [], int [], int [], int [], int,
+                               MPI_Datatype, MPI_Datatype *);
+    int MPI_Type_commit(MPI_Datatype *);
+    int MPI_File_open(MPI_Comm, char *, int, MPI_Info, MPI_File *);
+    int MPI_File_set_view(MPI_File, MPI_Offset, MPI_Datatype,
+                          MPI_Datatype, char *, MPI_Info);
+    int MPI_File_write_all(MPI_File, void *, int, MPI_Datatype, MPI_Status *);
     void blacs_pinfo_ ( int *mypnum, int *nprocs );
+    void blacs_pnum_ ( int *ConTxt, int *prow, int *pcol );
     void blacs_setup_ ( int *mypnum, int *nprocs );
     void blacs_get_ ( int *ConTxt, int *what, int *val );
     void blacs_gridinit_ ( int *ConTxt, char *order, int *nprow, int *npcol );
@@ -120,7 +129,6 @@ int main(int argc, char **argv) {
         //Dimension of D (dense matrix) is the number of dense effects (k)
         Ddim=k;
 
-
         pcol= * ( position+1 );
 
         //Define number of blocks needed to store a complete column/row of D
@@ -168,9 +176,51 @@ int main(int argc, char **argv) {
         //which are necessary to create the distributed Schur complement of D
         info = set_up_BD ( DESCD, D, BT_i, B_j );
 
+        //printdense(Drows*blocksize, Dcols * blocksize,D,"matrix_D.txt");
+
         blacs_barrier_ ( &ICTXT2D,"ALL" );
         if (iam==0)
             printf ( "Matrices B & D set up\n" );
+
+        if(printD_bool) {
+
+            int array_of_gsizes[2], array_of_distribs[2], array_of_dargs[2], array_of_psize[2] ;
+            int buffersize;
+            MPI_Datatype file_type;
+            MPI_File fh;
+            MPI_Status status;
+            array_of_gsizes[0]=Dblocks * blocksize;
+            array_of_gsizes[1]=Dblocks * blocksize;
+            array_of_distribs[0]=MPI_DISTRIBUTE_CYCLIC;
+            array_of_distribs[1]=MPI_DISTRIBUTE_CYCLIC;
+            array_of_dargs[0]=blocksize;
+            array_of_dargs[1]=blocksize;
+            array_of_psize[0]=*dims;
+            array_of_psize[1]=*(dims + 1);
+
+            MPI_Type_create_darray(size,iam,2,array_of_gsizes, array_of_distribs,
+                                   array_of_dargs, array_of_psize, MPI_ORDER_FORTRAN,
+                                   MPI_DOUBLE, &file_type);
+            MPI_Type_commit(&file_type);
+            info = MPI_File_open(MPI_COMM_WORLD, "matrix_D.bin",
+                                 MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                                 MPI_INFO_NULL, &fh);
+            /*if ( ( Drows-1 ) % *(dims+1) == *position && ( Dcols-1 ) % *(dims) == pcol && Ddim%blocksize !=0 )
+                buffersize=((Drows-1) * blocksize + Ddim % blocksize) * ((Dcols-1) * blocksize + Ddim % blocksize);
+            else if ( ( Drows-1 ) % *(dims+1) == *position && Ddim%blocksize !=0 )
+                buffersize=((Drows-1) * blocksize + Ddim % blocksize) * Dcols * blocksize;
+            else if ( ( Dcols-1 ) % *(dims) == *position && Ddim%blocksize !=0 )
+                buffersize=((Dcols-1) * blocksize + Ddim % blocksize) * Drows * blocksize;
+            else*/
+            buffersize= Dcols * Drows * blocksize * blocksize;
+
+            MPI_File_set_view(fh, 0, MPI_DOUBLE, file_type, "native", MPI_INFO_NULL);
+            info =MPI_File_write_all(fh, D,buffersize, MPI_DOUBLE,
+                                     &status);
+            if(iam==0) {
+                printf("Matrix D (dimension %d) is printed in file %s\n", Dblocks*blocksize,filenameD);
+            }
+        }
 
         //Now every matrix has to set up the sparse matrix A, consisting of X'X, X'Z, Z'X and Z'Z + lambda*I
         Xsparse.loadFromFile ( filenameX );
@@ -231,8 +281,9 @@ int main(int argc, char **argv) {
             cout << "***                                           [ Z X   Z Z ] *** " << endl;
         }
 
-        //Sparse matrix A only contains the upper traingular part of A
+        //Sparse matrix A only contains the upper triangular part of A
         create2x2SymBlockMatrix ( XtX_sparse, XtZ_sparse, ZtZ_sparse, Asparse );
+        //Asparse.writeToFile("A_sparse.csr");
 
         /*smat_free(XtX_smat);
         smat_free(XtZ_smat);
@@ -261,8 +312,10 @@ int main(int argc, char **argv) {
         AB_sol=(double *) calloc(Adim * Dcols*blocksize,sizeof(double));
 
         // Each process calculates the Schur complement of the part of D at its disposal. (see src/schur.cpp)
-        // The solution of A * X = B_j is stored in AB_sol (= A^-1 * B_j)
+        // The solution of A * Y = B_j is stored in AB_sol (= A^-1 * B_j)
         make_Sij_parallel_denseB ( Asparse, BT_i, B_j, D, lld_D, AB_sol );
+
+        //From here on the Schur complement S of D is stored in D
 
         blacs_barrier_ ( &ICTXT2D,"ALL" );
 
@@ -273,14 +326,18 @@ int main(int argc, char **argv) {
             return -1;
         }
 
+        //From here on the factorization of the Schur complement S is stored in D
+
         blacs_barrier_ ( &ICTXT2D,"ALL" );
 
-        //The Schur complement is inverteded (by ScaLAPACK)
+        //The Schur complement is inverted (by ScaLAPACK)
         pdpotri_ ( "U",&k,D,&i_one,&i_one,DESCD,&info );
         if ( info != 0 ) {
             printf ( "Inverse of D was unsuccessful, error returned: %d\n",info );
             return -1;
         }
+
+        //From here on the inverse of the Schur complement S is stored in D
 
         blacs_barrier_(&ICTXT2D,"A");
 
@@ -337,17 +394,17 @@ int main(int argc, char **argv) {
         }
         blacs_barrier_(&ICTXT2D,"A");
 
-        // To minimize memory usage, and because only the diagonal elements of the inverse are needed, X' * S is calculated row by rowblocks
-        // the diagonal element is calculates as the dot product of this row and the corresponding column of X. (X is solution of AX=B)
-        double* XSrow= ( double* ) calloc ( Dcols * blocksize,sizeof ( double ) );
-        int * DESCXSROW;
-        DESCXSROW= ( int* ) malloc ( DLEN_ * sizeof ( int ) );
-        if ( DESCXSROW==NULL ) {
+        // To minimize memory usage, and because only the diagonal elements of the inverse are needed, Y' * S is calculated row by rowblocks
+        // the diagonal element is calculates as the dot product of this row and the corresponding column of Y. (Y is solution of AY=B)
+        double* YSrow= ( double* ) calloc ( Dcols * blocksize,sizeof ( double ) );
+        int * DESCYSROW;
+        DESCYSROW= ( int* ) malloc ( DLEN_ * sizeof ( int ) );
+        if ( DESCYSROW==NULL ) {
             printf ( "unable to allocate memory for descriptor for AB_sol\n" );
             return -1;
         }
-        //XSrow (1,Ddim) is distributed acrros processes of ICTXT2D starting from process (0,0) into blocks of size (1,blocksize)
-        descinit_ ( DESCXSROW, &i_one, &Ddim, &i_one,&blocksize, &i_zero, &i_zero, &ICTXT2D, &i_one, &info );
+        //XSrow (1,Ddim) is distributed across processes of ICTXT2D starting from process (0,0) into blocks of size (1,blocksize)
+        descinit_ ( DESCYSROW, &i_one, &Ddim, &i_one,&blocksize, &i_zero, &i_zero, &ICTXT2D, &i_one, &info );
         if ( info!=0 ) {
             printf ( "Descriptor of matrix C returns info: %d\n",info );
             return info;
@@ -357,10 +414,16 @@ int main(int argc, char **argv) {
 
         //Calculating diagonal elements 1 by 1 of the (0,0)-block of C^-1.
         for (i=1; i<=Adim; ++i) {
-            pdsymm_ ("R","U",&i_one,&Ddim,&d_one,D,&i_one,&i_one,DESCD,AB_sol,&i,&i_one,DESCAB_sol,&d_zero,XSrow,&i_one,&i_one,DESCXSROW);
-            pddot_(&Ddim,InvD_T_Block+i-1,AB_sol,&i,&i_one,DESCAB_sol,&Adim,XSrow,&i_one,&i_one,DESCXSROW,&i_one);
+            pdsymm_ ("R","U",&i_one,&Ddim,&d_one,D,&i_one,&i_one,DESCD,AB_sol,&i,&i_one,DESCAB_sol,&d_zero,YSrow,&i_one,&i_one,DESCYSROW);
+            pddot_(&Ddim,InvD_T_Block+i-1,AB_sol,&i,&i_one,DESCAB_sol,&Adim,YSrow,&i_one,&i_one,DESCYSROW,&i_one);
+            /*if(*position==1 && pcol==1)
+            printf("Dot product in process (1,1) is: %g\n", *(InvD_T_Block+i-1));
+            if(*position==0 && pcol==1)
+            printf("Dot product in process (0,1) is: %g\n",*(InvD_T_Block+i-1));*/
         }
         blacs_barrier_(&ICTXT2D,"A");
+
+
 
         //Only in the root process we add the diagonal elements of A^-1
         if (iam ==0) {

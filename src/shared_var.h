@@ -2,6 +2,21 @@
 #define Shared_Var_h
 
 #define MPI_COMM_WORLD ((MPI_Comm)0x44000000)
+#define MPI_DISTRIBUTE_CYCLIC   122
+#define MPI_ORDER_FORTRAN        57
+#  define MPI_ORDER_C             56
+#define MPI_MODE_CREATE              1  /* ADIO_CREATE */ 
+#define MPI_MODE_WRONLY              4  /* ADIO_WRONLY  */
+typedef int MPI_Info;
+#define MPI_INFO_NULL         ((MPI_Info)0x1c000000)
+
+#ifndef MPI_FILE_DEFINED
+typedef struct ADIOI_FileD *MPI_File;
+#endif
+
+#ifndef HAVE_MPI_OFFSET
+typedef long long MPI_Offset;
+#endif
 
 typedef int MPI_Comm;
 
@@ -57,7 +72,8 @@ extern int DLEN_, i_negone, i_zero, i_one; // some many used constants
 extern int k,n,m, l, blocksize; //dimensions of different matrices
 extern int lld_D, Dblocks, Ddim, Drows, Dcols;
 extern int size, *dims, * position, ICTXT2D, iam;
-extern char *filenameT, *filenameX, *filenameZ;
+extern char *filenameT, *filenameX, *filenameZ, *filenameD;
 extern double lambda;
+extern bool printD_bool;
 
 #endif

@@ -123,7 +123,7 @@ void mult_CSRA_denseB_storeCSRC ( CSRdouble& A, double *B, bool trans,
  * @brief Computes some columns of sparse A with dense B and stores it into sparse C starting at a given column. A and C must have the same number of rows
  *
  * @param A Sparse matrix of which some columns are selected to be multiplied with B
- * @param B Dense matrix to be multiplied with the columns of B
+ * @param B Dense matrix to be multiplied with the columns of B (stored row-wise)
  * @param lld_B local leading dimension of B (should always be larger than Cncols)
  * @param Acolstart First column of the submatrix of A to be multiplied with B (if Acolstart > A.ncols no multiplication is performed, but no error is returned)
  * @param Ancols Number of columns in the submatrix of A to be multiplied with B (if Acolstart + Ancols > A.ncols no multiplication is performed for columns > a.ncols, but no error is returned
@@ -176,6 +176,27 @@ void mult_colsA_colsC ( CSRdouble& A, double *B, int lld_B, int Acolstart, int A
 
     if ( trans )
         C.transposeIt ( 1 );
+}
+
+void mult_colsA_colsC_denseC ( CSRdouble& A,double *B, int lld_B, int Acolstart, int Ancols, int Ccolstart, int Cncols, 
+			       double *C, int lld_C, bool sum, double alpha ) {
+    int i, j,row, col, C_nnz,C_ncols, *prows;
+    double cij;
+
+    /*assert(Cncols < lld_B);
+    assert(Ccolstart+Cncols <= C.ncols);*/
+    
+    for ( row=0; row<A.nrows; ++row ) {
+        for ( col=Ccolstart; col<Ccolstart+Cncols; ++col ) {
+            if (!sum)
+	      *(C + row + col * lld_C) = 0;
+            for ( i=A.pRows[row]; i<A.pRows[row+1]; ++i ) {
+                j = A.pCols[i];
+                if ( j>=Acolstart && j<Acolstart+Ancols )
+                    *(C + row + col * lld_C) = *(C + row + col * lld_C) + alpha * A.pData[i] * * ( B + lld_B * (col-Ccolstart) + j-Acolstart  ) ;
+            }
+        }
+    }
 }
 
 /**

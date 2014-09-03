@@ -216,7 +216,7 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
         //pdsyrk_ ( "U","N",&k,&stripcols,&d_one, Tblock,&i_one, &i_one,DESCT, &d_one, Dmat, &t_plus, &t_plus, DESCD );
 
         // Matrix B consists of X'T and Z'T, since each process only has some parts of T at its disposal,
-        // we need to make sure that the correct colums of Z and X are multiplied by the correct columns of T.
+        // we need to make sure that the correct columns of Z and X are multiplied with the correct columns of T.
         for ( i=0; i<pTblocks; ++i ) {
             XtT_temp.ncols=k;
 
@@ -350,6 +350,9 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
         // B' is created by concatening blocks X'T and Z'T
         CSRdouble Btsparse;
         create1x2BlockMatrix ( XtT_sparse, ZtT_sparse,Btsparse );
+	/*Btsparse.transposeIt(1);
+        Btsparse.writeToFile("B_sparse.csr");
+	Btsparse.transposeIt(1);*/
 
         // For each process row i BT_i is created which is also sent to processes in column i to become B_j.
         for ( int rowproc= *dims - 1; rowproc>= 0; --rowproc ) {
