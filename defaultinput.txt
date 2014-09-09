@@ -42,3 +42,7 @@ Xmatrix.csr
 /If dense matrix D should be printed to a binary file, the filename should be given here (optional)
 #OutputFileD
 matrixD.bin
+
+/If full matrix C should be printed as a sparse CSR matrix to a file, the filename should be given here (optional)
+#OutputFileSparseC
+matrixC.csr

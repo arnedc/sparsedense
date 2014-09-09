@@ -38,3 +38,11 @@ X_val.csr
 /start value of variance parameter to be estimated (optional, default=100)
 #Lambda
 100
+
+/If dense matrix D should be printed to a binary file, the filename should be given here (optional)
+#OutputFileD
+matrixD.bin
+
+/If full matrix C should be printed as a sparse CSR matrix to a file, the filename should be given here (optional)
+#OutputFileSparseC
+matrixC.csr

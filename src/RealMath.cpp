@@ -495,12 +495,15 @@ void create2x2SymBlockMatrix(CSRdouble& A, CSRdouble& B, CSRdouble& T, // input
         for (int index = T.pRows[i]; index < T.pRows[i+1]; index++)
         {
             int& j              = T.pCols[index];
-            double& t_ij        = T.pData[index];
+            if (j>=i)
+            {
+                double& a_ij        = T.pData[index];
 
-            c[nonzero_counter] = t_ij;
-            jc[nonzero_counter] = A.ncols + j;
+                c[nonzero_counter] = a_ij;
+                jc[nonzero_counter] = A.ncols + j;
 
-            nonzero_counter++;
+                nonzero_counter++;
+            }
         }
 
         ic[A.nrows+i+1] = nonzero_counter;
@@ -508,8 +511,10 @@ void create2x2SymBlockMatrix(CSRdouble& A, CSRdouble& B, CSRdouble& T, // input
     if (nonzero_counter != nonzeros)
         cout << "Nonzeroes do not match, nonzero_counter= " << nonzero_counter << "; nonzeros= " << nonzeros <<endl;
 
-
-    C.make(nrows, ncols, nonzeros, ic, jc, c);
+    //jc = (int *) realloc(jc,sizeof(int) * nonzero_counter);
+    //c = (double *) realloc(c,sizeof(double) * nonzero_counter);
+    
+    C.make(nrows, ncols, nonzero_counter, ic, jc, c);
     C.sortColumns();
     // C.writeToFile("C.csr");
 }

@@ -6,8 +6,6 @@
 #include <cassert>
 
 extern "C" {
-    int MPI_Ssend(void*, int, MPI_Datatype, int, int, MPI_Comm);
-    int MPI_Recv(void*, int, MPI_Datatype, int, int, MPI_Comm, MPI_Status *);
     int MPI_Get_count(MPI_Status *, MPI_Datatype, int *);
     void descinit_ ( int*, int*, int*, int*, int*, int*, int*, int*, int*, int* );
     void blacs_barrier_ ( int*, char* );
@@ -16,7 +14,7 @@ extern "C" {
                    int *jb, int *descb, double *beta, double *c, int *ic, int *jc, int *descc );
 }
 
-int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
+int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j, CSRdouble& Btsparse ) {
 
     // Read-in of matrices X, Z and T from file (filename[X,Z,T])
     // X and Z are read in entrely by every process
@@ -30,8 +28,6 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
     int *DESCT;
     double *Tblock, *temp;
     int nTblocks, nstrips, pTblocks, stripcols, lld_T, pcol, colcur,rowcur;
-
-    MPI_Status status;
 
     CSRdouble Xtsparse, Ztsparse,XtT_sparse,ZtT_sparse,XtT_temp, ZtT_temp;
 
@@ -226,10 +222,10 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
                                ( *dims * i + *position ) *blocksize, blocksize, XtT_temp, 0 );
             if ( XtT_temp.nonzeros>0 ) {
                 if ( XtT_sparse.nonzeros==0 )
-                    XtT_sparse.make ( XtT_temp.nrows,XtT_temp.ncols,XtT_temp.nonzeros,XtT_temp.pRows,XtT_temp.pCols,XtT_temp.pData );
+                    XtT_sparse.make2 ( XtT_temp.nrows,XtT_temp.ncols,XtT_temp.nonzeros,XtT_temp.pRows,XtT_temp.pCols,XtT_temp.pData );
                 else {
                     XtT_sparse.addBCSR ( XtT_temp );
-                }
+		}
             }
         }
         //Same as above for calculating Z'T
@@ -239,13 +235,15 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
                                blocksize * ( *dims * i + *position ), blocksize, ZtT_temp, 0 );
             if ( ZtT_temp.nonzeros>0 ) {
                 if ( ZtT_sparse.nonzeros==0 )
-                    ZtT_sparse.make ( ZtT_temp.nrows,ZtT_temp.ncols,ZtT_temp.nonzeros,ZtT_temp.pRows,ZtT_temp.pCols,ZtT_temp.pData );
-                else
+                    ZtT_sparse.make2 ( ZtT_temp.nrows,ZtT_temp.ncols,ZtT_temp.nonzeros,ZtT_temp.pRows,ZtT_temp.pCols,ZtT_temp.pData );
+                else 
                     ZtT_sparse.addBCSR ( ZtT_temp );
             }
         }
         blacs_barrier_ ( &ICTXT2D,"A" );
     }
+    
+    //printf("T read in\n");
 
     info=fclose ( fT );
     if ( info!=0 ) {
@@ -258,14 +256,16 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
     //Each process then receives BT_i and B_j corresponding to the D_ij available to the process
     if ( iam!=0 ) {
         //Each process other than root sends its X' * T and Z' * T to the root process.
-        MPI_Ssend ( & ( XtT_sparse.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( XtT_sparse.pRows[0] ),XtT_sparse.nrows + 1, MPI_INT,0,iam+size,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( XtT_sparse.pCols[0] ),XtT_sparse.nonzeros, MPI_INT,0,iam+2*size,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( XtT_sparse.pData[0] ),XtT_sparse.nonzeros, MPI_DOUBLE,0,iam+3*size,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( ZtT_sparse.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( ZtT_sparse.pRows[0] ),ZtT_sparse.nrows + 1, MPI_INT,0,4*size + iam,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( ZtT_sparse.pCols[0] ),ZtT_sparse.nonzeros, MPI_INT,0,iam+ 5*size,MPI_COMM_WORLD );
-        MPI_Ssend ( & ( ZtT_sparse.pData[0] ),ZtT_sparse.nonzeros, MPI_DOUBLE,0,iam+6*size,MPI_COMM_WORLD );
+        MPI_Send ( & ( XtT_sparse.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
+        MPI_Send ( & ( XtT_sparse.pRows[0] ),XtT_sparse.nrows + 1, MPI_INT,0,iam+size,MPI_COMM_WORLD );
+        MPI_Send ( & ( XtT_sparse.pCols[0] ),XtT_sparse.nonzeros, MPI_INT,0,iam+2*size,MPI_COMM_WORLD );
+        MPI_Send ( & ( XtT_sparse.pData[0] ),XtT_sparse.nonzeros, MPI_DOUBLE,0,iam+3*size,MPI_COMM_WORLD );
+        MPI_Send ( & ( ZtT_sparse.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
+        MPI_Send ( & ( ZtT_sparse.pRows[0] ),ZtT_sparse.nrows + 1, MPI_INT,0,4*size + iam,MPI_COMM_WORLD );
+        MPI_Send ( & ( ZtT_sparse.pCols[0] ),ZtT_sparse.nonzeros, MPI_INT,0,iam+ 5*size,MPI_COMM_WORLD );
+        MPI_Send ( & ( ZtT_sparse.pData[0] ),ZtT_sparse.nonzeros, MPI_DOUBLE,0,iam+6*size,MPI_COMM_WORLD );
+	
+	//printf("Process %d sent ZtT and XtT\n",iam);
 
         // And eventually receives the necessary BT_i and B_j
         // Blocking sends are used, which is why the order of the receives is critical depending on the coordinates of the process
@@ -348,7 +348,6 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
         ZtT_sparse.transposeIt ( 1 );
 
         // B' is created by concatening blocks X'T and Z'T
-        CSRdouble Btsparse;
         create1x2BlockMatrix ( XtT_sparse, ZtT_sparse,Btsparse );
 	/*Btsparse.transposeIt(1);
         Btsparse.writeToFile("B_sparse.csr");
@@ -375,23 +374,23 @@ int set_up_BD ( int * DESCD, double * Dmat, CSRdouble& BT_i, CSRdouble& B_j ) {
                 int *curpos, rankproc;
                 rankproc= blacs_pnum_ (&ICTXT2D, &rowproc,&colproc);
 
-                MPI_Ssend ( & ( BT_i.nonzeros ),1, MPI_INT,rankproc,rankproc,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pRows[0] ),BT_i.nrows + 1, MPI_INT,rankproc,rankproc+size,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pCols[0] ),BT_i.nonzeros, MPI_INT,rankproc,rankproc+2*size,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pData[0] ),BT_i.nonzeros, MPI_DOUBLE,rankproc,rankproc+3*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.nonzeros ),1, MPI_INT,rankproc,rankproc,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pRows[0] ),BT_i.nrows + 1, MPI_INT,rankproc,rankproc+size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pCols[0] ),BT_i.nonzeros, MPI_INT,rankproc,rankproc+2*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pData[0] ),BT_i.nonzeros, MPI_DOUBLE,rankproc,rankproc+3*size,MPI_COMM_WORLD );
 
                 //printf("BT_i's sent to processor %d\n",rankproc);
 
                 rankproc= blacs_pnum_ (&ICTXT2D, &colproc,&rowproc);
-                MPI_Ssend ( & ( BT_i.nonzeros ),1, MPI_INT,rankproc,rankproc+4*size,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pRows[0] ),BT_i.nrows + 1, MPI_INT,rankproc,rankproc+5*size,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pCols[0] ),BT_i.nonzeros, MPI_INT,rankproc,rankproc+6*size,MPI_COMM_WORLD );
-                MPI_Ssend ( & ( BT_i.pData[0] ),BT_i.nonzeros, MPI_DOUBLE,rankproc,rankproc+7*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.nonzeros ),1, MPI_INT,rankproc,rankproc+4*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pRows[0] ),BT_i.nrows + 1, MPI_INT,rankproc,rankproc+5*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pCols[0] ),BT_i.nonzeros, MPI_INT,rankproc,rankproc+6*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( BT_i.pData[0] ),BT_i.nonzeros, MPI_DOUBLE,rankproc,rankproc+7*size,MPI_COMM_WORLD );
 
                 //printf("B_j's sent to processor %d\n",rankproc);
             }
         }
-        B_j.make ( BT_i.nrows,BT_i.ncols,BT_i.nonzeros,BT_i.pRows,BT_i.pCols,BT_i.pData );
+        B_j.make2 ( BT_i.nrows,BT_i.ncols,BT_i.nonzeros,BT_i.pRows,BT_i.pCols,BT_i.pData );
         B_j.transposeIt ( 1 );
     }
     free ( DESCT );

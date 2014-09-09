@@ -25,6 +25,7 @@ public:
     void  loadFromFile ( const char* file, ios::openmode mode = ios::out );
     void  loadFromFileCOO ( const char* file );
     void  make ( int n, int m, int nzeros, int* prows, int* pcols, double* pdata );
+    void  make2 ( int n, int m, int nzeros, int* prows, int* pcols, double* pdata );
     void  transposeIt ( int block_size );
 
     void  addBCSR ( CSRdouble& B );
@@ -37,6 +38,7 @@ public:
     void  multiplyT ( double* x, double* y );
     void  sortColumns();
     void  fillSymmetric();
+    void  reduceSymmetric();
     void  writeToFile ( const char* filename, ios::openmode mode = ios::out ) const;
     void  savedebug ( const char* filename ) const;
     void  clear();

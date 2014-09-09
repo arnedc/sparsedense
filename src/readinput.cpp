@@ -17,10 +17,12 @@ int read_input ( char * filename ) {
     filenameX= ( char* ) calloc ( 100,sizeof ( char ) );
     filenameZ= ( char* ) calloc ( 100,sizeof ( char ) );
     filenameD= ( char* ) calloc ( 100,sizeof ( char ) );
+    filenameC= ( char* ) calloc ( 100,sizeof ( char ) );
 
     lambda=100;
     blocksize=64;
     printD_bool=false;
+    printsparseC_bool=false;
 
 
     while ( std::getline ( inputfile,line ) ) {
@@ -64,6 +66,10 @@ int read_input ( char * filename ) {
             std::getline ( inputfile,line );
             line.copy ( filenameD,100 );;
             printD_bool=true;
+	} else if ( line=="#OutputFileSparseC" ) {
+            std::getline ( inputfile,line );
+            line.copy ( filenameC,100 );;
+            printsparseC_bool=true;
         } else if ( line[0]=='/' || line.size() ==0 ) {}
         else {
             printf ( "Unknown parameter in inputfile, the following line was ignored: \n" );
@@ -125,7 +131,9 @@ int read_input ( char * filename ) {
         else
             printf ( "Default start value of %g was used to estimate variance component lambda\n", lambda );
 	if ( printD_bool )
-	  printf("Matrix D will be written to binaray file %s \n", filenameD);
+	  printf("Matrix D will be written to binary file %s \n", filenameD);
+	if ( printsparseC_bool )
+	  printf("Sparse matrix C will be written in CSR format to text file %s \n", filenameC);
     }
     return 0;
 }

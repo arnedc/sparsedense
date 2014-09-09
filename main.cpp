@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-//#include <mpi.h>
+//#include "/usr/include/openmpi-x86_64/mpi.h"
 #include "src/shared_var.h"
 #include "src/config.hpp"
 #include "src/CSRdouble.hpp"
@@ -21,6 +21,7 @@ extern "C" {
     int MPI_File_set_view(MPI_File, MPI_Offset, MPI_Datatype,
                           MPI_Datatype, char *, MPI_Info);
     int MPI_File_write_all(MPI_File, void *, int, MPI_Datatype, MPI_Status *);
+    int MPI_Get_count(MPI_Status *, MPI_Datatype, int *);
     void blacs_pinfo_ ( int *mypnum, int *nprocs );
     void blacs_pnum_ ( int *ConTxt, int *prow, int *pcol );
     void blacs_setup_ ( int *mypnum, int *nprocs );
@@ -43,14 +44,22 @@ int DLEN_=9, i_negone=-1, i_zero=0, i_one=1; // some many used constants
 int k,n,m, l, blocksize; //dimensions of different matrices
 int lld_D, Dblocks, Ddim, Drows, Dcols;
 int size, *dims, * position, ICTXT2D, iam;
-char *filenameT, *filenameX, *filenameZ;
+char *filenameT, *filenameX, *filenameZ, *filenameD, *filenameC;
 double lambda;
+bool printD_bool, printsparseC_bool;
+MPI_Status status;
 
 int main(int argc, char **argv) {
     int info, i, j, pcol, Adim;
     double *D;
     int *DESCD;
-    CSRdouble BT_i, B_j, Xsparse, Zsparse;
+    CSRdouble BT_i, B_j, Xsparse, Zsparse, Btsparse;
+    
+    BT_i.allocate(0,0,0);
+    B_j.allocate(0,0,0);
+    Xsparse.allocate(0,0,0);
+    Zsparse.allocate(0,0,0);
+    Btsparse.allocate(0,0,0);
 
     //Initialise MPI and some MPI-variables
     info = MPI_Init ( &argc, &argv );
@@ -174,7 +183,7 @@ int main(int argc, char **argv) {
         blacs_barrier_ ( &ICTXT2D,"ALL" );
         //set_up_BD is declared in readdist.cpp and constructs the parts of matrices B & D in each processor
         //which are necessary to create the distributed Schur complement of D
-        info = set_up_BD ( DESCD, D, BT_i, B_j );
+        info = set_up_BD ( DESCD, D, BT_i, B_j, Btsparse );
 
         //printdense(Drows*blocksize, Dcols * blocksize,D,"matrix_D.txt");
 
@@ -202,7 +211,7 @@ int main(int argc, char **argv) {
                                    array_of_dargs, array_of_psize, MPI_ORDER_FORTRAN,
                                    MPI_DOUBLE, &file_type);
             MPI_Type_commit(&file_type);
-            info = MPI_File_open(MPI_COMM_WORLD, "matrix_D.bin",
+            info = MPI_File_open(MPI_COMM_WORLD, filenameD,
                                  MPI_MODE_CREATE | MPI_MODE_WRONLY,
                                  MPI_INFO_NULL, &fh);
             /*if ( ( Drows-1 ) % *(dims+1) == *position && ( Dcols-1 ) % *(dims) == pcol && Ddim%blocksize !=0 )
@@ -222,55 +231,77 @@ int main(int argc, char **argv) {
             }
         }
 
+
+
         //Now every matrix has to set up the sparse matrix A, consisting of X'X, X'Z, Z'X and Z'Z + lambda*I
         Xsparse.loadFromFile ( filenameX );
         Zsparse.loadFromFile ( filenameZ );
 
         smat_t *X_smat, *Z_smat;
-
+	
+	X_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	Z_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	
         X_smat = smat_new_from ( Xsparse.nrows,Xsparse.ncols,Xsparse.pRows,Xsparse.pCols,Xsparse.pData,0,0 );
         Z_smat = smat_new_from ( Zsparse.nrows,Zsparse.ncols,Zsparse.pRows,Zsparse.pCols,Zsparse.pData,0,0 );
-
+	
         smat_t *Xt_smat, *Zt_smat;
+	Xt_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	Zt_smat= (smat_t *) calloc(1,sizeof(smat_t));
         Xt_smat = smat_copy_trans ( X_smat );
         Zt_smat = smat_copy_trans ( Z_smat );
 
         CSRdouble Asparse;
         smat_t *XtX_smat, *XtZ_smat, *ZtZ_smat, *lambda_smat, *ZtZlambda_smat;
+	
+	XtX_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	XtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	ZtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
+	
 
         XtX_smat = smat_matmul ( Xt_smat, X_smat );
         XtZ_smat = smat_matmul ( Xt_smat, Z_smat );
         ZtZ_smat = smat_matmul ( Zt_smat,Z_smat );
 
-        /*smat_free(X_smat);
-        smat_free(Z_smat);
-        smat_free(Xt_smat);
+        
+        /*smat_free(Xt_smat);
         smat_free(Zt_smat);
-        Xsparse.clear();
-        Zsparse.clear();*/
+        smat_free(X_smat);
+        smat_free(Z_smat);*/
 
         CSRdouble Imat;
 
         makeIdentity ( l, Imat );
+	
+	lambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
 
         lambda_smat = smat_new_from ( Imat.nrows,Imat.ncols,Imat.pRows,Imat.pCols,Imat.pData,0,0 );
 
         smat_scale_diag ( lambda_smat, -lambda );
+	
+	ZtZlambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
 
         ZtZlambda_smat = smat_add ( lambda_smat, ZtZ_smat );
 
         /*smat_free(ZtZ_smat);
-        smat_free(lambda_smat);
-        Imat.clear();*/
+        smat_free(lambda_smat);*/
+        
 
         smat_to_symmetric_structure ( XtX_smat );
         smat_to_symmetric_structure ( ZtZlambda_smat );
 
         CSRdouble XtX_sparse, XtZ_sparse, ZtZ_sparse;
 
-        XtX_sparse.make ( XtX_smat->m,XtX_smat->n,XtX_smat->nnz,XtX_smat->ia,XtX_smat->ja,XtX_smat->a );
-        XtZ_sparse.make ( XtZ_smat->m,XtZ_smat->n,XtZ_smat->nnz,XtZ_smat->ia,XtZ_smat->ja,XtZ_smat->a );
-        ZtZ_sparse.make ( ZtZlambda_smat->m,ZtZlambda_smat->n,ZtZlambda_smat->nnz,ZtZlambda_smat->ia,ZtZlambda_smat->ja,ZtZlambda_smat->a );
+        XtX_sparse.make2 ( XtX_smat->m,XtX_smat->n,XtX_smat->nnz,XtX_smat->ia,XtX_smat->ja,XtX_smat->a );
+        XtZ_sparse.make2 ( XtZ_smat->m,XtZ_smat->n,XtZ_smat->nnz,XtZ_smat->ia,XtZ_smat->ja,XtZ_smat->a );
+        ZtZ_sparse.make2 ( ZtZlambda_smat->m,ZtZlambda_smat->n,ZtZlambda_smat->nnz,ZtZlambda_smat->ia,ZtZlambda_smat->ja,ZtZlambda_smat->a );
+	
+	/*smat_free(XtX_smat);
+	smat_free(XtZ_smat);
+	smat_free(ZtZlambda_smat);*/
+	Xsparse.clear();
+	Zsparse.clear();
+	Imat.clear();
 
         if (iam==0) {
             cout << "***                                           [  t     t  ] *** " << endl;
@@ -294,6 +325,87 @@ int main(int argc, char **argv) {
 
         blacs_barrier_ ( &ICTXT2D,"ALL" );
 
+        if(printsparseC_bool) {
+            CSRdouble Dmat, Dblock, Csparse;
+            Dblock.nrows=Dblocks * blocksize;
+            Dblock.ncols=Dblocks * blocksize;
+	    Dblock.allocate(Dblocks * blocksize, Dblocks * blocksize, 0);
+	    Dmat.allocate(0,0,0);
+            for (i=0; i<Drows; ++i) {
+                for(j=0; j<Dcols; ++j) {
+		  if(iam==3){
+		    printdense(2,2,D,"D3.txt");
+		    printf("Start Dblock: (%d,%d)\n",i*blocksize,j * lld_D * blocksize);
+		    printf("rows and cols of Dblock: %d\n",Dblock.nrows);
+		    printf("Position in grid: (%d,%d)\n",*position, pcol);
+		    printf("Position in D: (%d,%d)\n",( * ( dims) * i + *position ) *blocksize, ( * ( dims+1 ) * j + pcol ) *blocksize);}
+		    //else{
+                    dense2CSR_sub(D + i * blocksize + j * lld_D * blocksize,blocksize,blocksize,lld_D,Dblock,( * ( dims) * i + *position ) *blocksize,
+                                  ( * ( dims+1 ) * j + pcol ) *blocksize);
+                    if ( Dblock.nonzeros>0 ) {
+                        if ( Dmat.nonzeros==0 ){
+                            Dmat.make2 ( Dblock.nrows,Dblock.ncols,Dblock.nonzeros,Dblock.pRows,Dblock.pCols,Dblock.pData );
+			    printf("Dmat is constructed from Dblock in process %d\n", iam);
+			}
+                        else {
+                            Dmat.addBCSR ( Dblock );
+			    printf("Dblock is added to Dmat in process %d\n", iam);
+			}
+                    }
+		    
+                    //Dblock.clear();
+                }
+            }
+            blacs_barrier_(&ICTXT2D,"A");
+            if(iam==3){
+	      //Dmat.writeToFile("Dmat_3.txt");
+	    }
+            if ( iam!=0 ) {
+                //Each process other than root sends its Dmat to the root process.
+                MPI_Send ( & ( Dmat.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
+                MPI_Send ( & ( Dmat.pRows[0] ),Dmat.nrows + 1, MPI_INT,0,iam+size,MPI_COMM_WORLD );
+                MPI_Send ( & ( Dmat.pCols[0] ),Dmat.nonzeros, MPI_INT,0,iam+2*size,MPI_COMM_WORLD );
+                MPI_Send ( & ( Dmat.pData[0] ),Dmat.nonzeros, MPI_DOUBLE,0,iam+3*size,MPI_COMM_WORLD );
+		//Dmat.clear();
+		//Dblock.clear();
+		printf("process %d sent its Dmat\n",iam);
+		
+            }
+            else if (iam==0) {
+                for ( i=1; i<size; ++i ) {
+                    // The root process receives parts of Dmat sequentially from all processes and directly adds them together.
+                    int nonzeroes, count;
+                    MPI_Recv ( &nonzeroes,1,MPI_INT,i,i,MPI_COMM_WORLD,&status );
+		    MPI_Get_count(&status, MPI_INT, &count);
+		    printf("Process 0 received %d elements of process %d\n",count,i);
+                    if(nonzeroes>0) {
+			printf("Nonzeroes : %d\n ",nonzeroes);
+                        Dblock.allocate ( Dblocks * blocksize,Dblocks * blocksize,nonzeroes );
+                        MPI_Recv ( & ( Dblock.pRows[0] ), Dblocks * blocksize + 1, MPI_INT,i,i+size,MPI_COMM_WORLD,&status );
+			MPI_Get_count(&status, MPI_INT, &count);
+		    printf("Process 0 received %d elements of process %d\n",count,i);
+                        MPI_Recv ( & ( Dblock.pCols[0] ),nonzeroes, MPI_INT,i,i+2*size,MPI_COMM_WORLD,&status );
+			MPI_Get_count(&status, MPI_INT, &count);
+		    printf("Process 0 received %d elements of process %d\n",count,i);
+                        MPI_Recv ( & ( Dblock.pData[0] ),nonzeroes, MPI_DOUBLE,i,i+3*size,MPI_COMM_WORLD,&status );
+			MPI_Get_count(&status, MPI_DOUBLE, &count);
+		    printf("Process 0 received %d elements of process %d\n",count,i);
+
+                        Dmat.addBCSR ( Dblock );
+                    }
+                    
+                }
+                //Dmat.writeToFile("D_sparse.csr");
+                Dmat.reduceSymmetric();
+                Btsparse.transposeIt(1);
+                create2x2SymBlockMatrix(Asparse,Btsparse, Dmat, Csparse);
+		Csparse.writeToFile(filenameC);
+		//Csparse.clear();
+            }
+        }
+        printf("process %d is OK\n",iam);
+        blacs_barrier_(&ICTXT2D,"A");
+
         //AB_sol will contain the solution of A*X=B, distributed across the process rows. Processes in the same process row possess the same part of AB_sol
         double * AB_sol;
         int * DESCAB_sol;
@@ -313,7 +425,10 @@ int main(int argc, char **argv) {
 
         // Each process calculates the Schur complement of the part of D at its disposal. (see src/schur.cpp)
         // The solution of A * Y = B_j is stored in AB_sol (= A^-1 * B_j)
+	blacs_barrier_(&ICTXT2D,"A");
         make_Sij_parallel_denseB ( Asparse, BT_i, B_j, D, lld_D, AB_sol );
+	BT_i.clear();
+	B_j.clear();
 
         //From here on the Schur complement S of D is stored in D
 
@@ -403,7 +518,7 @@ int main(int argc, char **argv) {
             printf ( "unable to allocate memory for descriptor for AB_sol\n" );
             return -1;
         }
-        //XSrow (1,Ddim) is distributed across processes of ICTXT2D starting from process (0,0) into blocks of size (1,blocksize)
+        //YSrow (1,Ddim) is distributed across processes of ICTXT2D starting from process (0,0) into blocks of size (1,blocksize)
         descinit_ ( DESCYSROW, &i_one, &Ddim, &i_one,&blocksize, &i_zero, &i_zero, &ICTXT2D, &i_one, &info );
         if ( info!=0 ) {
             printf ( "Descriptor of matrix C returns info: %d\n",info );
@@ -422,6 +537,9 @@ int main(int argc, char **argv) {
             printf("Dot product in process (0,1) is: %g\n",*(InvD_T_Block+i-1));*/
         }
         blacs_barrier_(&ICTXT2D,"A");
+	if(D != NULL)
+	  free(D);
+	D = NULL;
 
 
 
@@ -436,7 +554,7 @@ int main(int argc, char **argv) {
     }
     //cout << iam << " reached end before MPI_Barrier" << endl;
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Finalize();
+    //MPI_Finalize();
 
     return 0;
 }

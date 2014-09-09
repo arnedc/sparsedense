@@ -52,14 +52,17 @@ class CSRdouble;
 
 extern "C"{
   void blacs_barrier_ ( int*, char* );
+  int MPI_Send(void*, int, MPI_Datatype, int, int, MPI_Comm);
+  int MPI_Recv(void*, int, MPI_Datatype, int, int, MPI_Comm, MPI_Status *);
 }
 
 void printdense ( int m, int n, double *mat, char *filename );
-int set_up_BD ( int* DESCC, double* Cmat, CSRdouble& BT_i, CSRdouble& B_j ) ;
+int set_up_BD ( int* DESCD, double* Dmat, CSRdouble& BT_i, CSRdouble& B_j, CSRdouble& Btsparse ) ;
 int read_input ( char* filename ) ;
 int make_Sij_sparse_parallel (CSRdouble& A, CSRdouble& BT_i, CSRdouble& B_j, double* T_ij, int lld_Tij );
 int make_Sij_parallel_denseB(CSRdouble& A, CSRdouble& BT_i, CSRdouble& B_j, double * T_ij, int lld_T, double* AB_sol) ;
 void dense2CSR ( double *mat, int m, int n, CSRdouble& A );
+void dense2CSR_sub ( double *mat, int m, int n, int lld_mat, CSRdouble& A, int startrow, int startcol );
 void CSR2dense ( CSRdouble& matrix, double* T_ij ) ;
 void CSR2dense_lld ( CSRdouble& matrix,double *dense, int lld_dense ) ;
 
@@ -72,8 +75,9 @@ extern int DLEN_, i_negone, i_zero, i_one; // some many used constants
 extern int k,n,m, l, blocksize; //dimensions of different matrices
 extern int lld_D, Dblocks, Ddim, Drows, Dcols;
 extern int size, *dims, * position, ICTXT2D, iam;
-extern char *filenameT, *filenameX, *filenameZ, *filenameD;
+extern char *filenameT, *filenameX, *filenameZ, *filenameD, *filenameC;
 extern double lambda;
-extern bool printD_bool;
+extern bool printD_bool, printsparseC_bool;
+extern MPI_Status status;
 
 #endif
