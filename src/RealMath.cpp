@@ -771,6 +771,9 @@ void makeRhsCSRdoubleMatrix(int number_of_rhs, int n, double* B, CSRdouble& Bmat
 
     memcpy(pcols, &vcols[0], nonzeros*sizeof(int));
     memcpy(pdata, &vdata[0], nonzeros*sizeof(double));
+    
+    vcols.clear();
+    vdata.clear();
 
     Bmat.make(n, n, nonzeros, prows, pcols, pdata);
 }

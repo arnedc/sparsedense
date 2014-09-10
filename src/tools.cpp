@@ -39,9 +39,21 @@ void dense2CSR ( double *mat, int m, int n, CSRdouble& A ) {
         }
     }
 
-    prows= ( int * ) calloc ( m+1,sizeof ( int ) );
-    pcols= ( int * ) calloc ( nnz,sizeof ( int ) );
-    pdata= ( double * ) calloc ( nnz,sizeof ( double ) );
+    prows= new int [m+1];
+    if ( prows == NULL ) {
+        printf ( "unable to allocate memory for prows in dense2CSR (required: %ld bytes)\n", (m+1) * sizeof ( int ) );
+        exit(1);
+    }
+    pcols= new int [nnz];
+    if ( pcols == NULL ) {
+        printf ( "unable to allocate memory for pcols in dense2CSR (required: %ld bytes)\n", nnz * sizeof ( int ) );
+        exit(1);
+    }
+    pdata= new double [nnz];
+    if ( pdata == NULL ) {
+        printf ( "unable to allocate memory for pdata in dense2CSR (required: %ld bytes)\n", nnz * sizeof ( double ) );
+        exit(1);
+    }
 
     *prows=0;
     nnz=0;
@@ -55,8 +67,8 @@ void dense2CSR ( double *mat, int m, int n, CSRdouble& A ) {
         }
         * ( prows+i+1 ) =nnz;
     }
-
-    A.make2 ( m,n,nnz,prows,pcols,pdata );
+    A.clear();
+    A.make ( m,n,nnz,prows,pcols,pdata );
 }
 
 //converting a dense matrix (m x n) stored column-wise to CSR format at specific submatrix
@@ -64,7 +76,7 @@ void dense2CSR_sub ( double *mat, int m, int n, int lld_mat, CSRdouble& A, int s
     int i,j, nnz, rows, cols;
     double *pdata;
     int  *prows,*pcols;
-    
+
     assert(A.nrows>=startrow + m);
     assert(A.ncols>=startcol + n);
 
@@ -77,47 +89,45 @@ void dense2CSR_sub ( double *mat, int m, int n, int lld_mat, CSRdouble& A, int s
             }
         }
     }
-    if(iam==3){
-      printf("first nonzeroes: %d\n",nnz);
-      printf("prows length: %d\n",A.nrows+1);
-    }
 
-    prows= ( int * ) calloc ( A.nrows+1,sizeof ( int ) );
-    pcols= ( int * ) calloc ( nnz,sizeof ( int ) );
-    pdata= ( double * ) calloc ( nnz,sizeof ( double ) );
+    prows= new int [A.nrows + 1];
+    if ( prows == NULL ) {
+        printf ( "unable to allocate memory for prows in dense2CSR (required: %ld bytes)\n", (A.nrows+1) * sizeof ( int ) );
+        exit(1);
+    }
+    pcols= new int[nnz];
+    if ( pcols == NULL ) {
+        printf ( "unable to allocate memory for pcols in dense2CSR (required: %ld bytes)\n", nnz * sizeof ( int ) );
+        exit(1);
+    }
+    pdata= new double[nnz];
+    if ( pdata == NULL ) {
+        printf ( "unable to allocate memory for pdata in dense2CSR (required: %ld bytes)\n", nnz * sizeof ( double ) );
+        exit(1);
+    }
 
     *prows=0;
     nnz=0;
-    for (i=1;i<=startrow;i++){
-      * (prows+i)=0;
-      if(iam==3)
-	  printf("element %d of prows (%d) was added\n",i,0 );
+    for (i=1; i<=startrow; i++) {
+        * (prows+i)=0;
     }
     for ( i=0; i<m; ++i ) {
         for ( j=0; j<n; ++j ) {
             if ( abs ( * ( mat+j*lld_mat+i ) ) >1e-10 ) { //If stored column-wise (BLAS), then moving through a row is going up by lld_mat (number of rows).
                 * ( pdata+nnz ) = * ( mat+j*lld_mat+i );
                 * ( pcols+nnz ) = j+startcol;
-		if(iam==3)
-		  printf("element (%d,%d) of D is added as element %d of pdata (%g) and pcol (%d)\n",i,j,nnz,* ( mat+j*lld_mat+i ),j+startcol);
                 nnz++;
             }
         }
         * ( prows+i+startrow+1 ) =nnz;
-	if(iam==3)
-	  printf("element %d of prows (%d) was added\n",i+startrow+1,nnz );
     }
-    for (i=startrow+m+1;i<=A.nrows;++i){
-      *(prows+i)=nnz;
-      if(iam==3)
-	  printf("element %d of prows (%d) was added\n",i,nnz );
+    for (i=startrow+m+1; i<=A.nrows; ++i) {
+        *(prows+i)=nnz;
     }
     rows=A.nrows;
     cols=A.ncols;
-    
-    A.make2 ( rows,cols,nnz,prows,pcols,pdata );
-    if(iam==3)
-    A.writeToFile("Dense2CSR.out");
+    A.clear();
+    A.make ( rows,cols,nnz,prows,pcols,pdata );
 }
 
 //Convert CSR to column-wise stored dense matrix
@@ -175,7 +185,12 @@ void mult_CSRA_denseB_storeCSRC ( CSRdouble& A, double *B, bool trans,
     memcpy ( pcols, &Ccols[0], C_nnz*sizeof ( int ) );
     memcpy ( pdata, &Cdata[0], C_nnz*sizeof ( double ) );
 
-    C.make2 ( A.nrows,C_ncols,C_nnz,prows,pcols,pdata );
+    Ccols.clear();
+    Cdata.clear();
+    
+    C.clear();
+
+    C.make ( A.nrows,C_ncols,C_nnz,prows,pcols,pdata );
 
     if ( trans )
         C.transposeIt ( 1 );
@@ -234,24 +249,27 @@ void mult_colsA_colsC ( CSRdouble& A, double *B, int lld_B, int Acolstart, int A
     memcpy ( pcols, &Ccols[0], C_nnz*sizeof ( int ) );
     memcpy ( pdata, &Cdata[0], C_nnz*sizeof ( double ) );
 
-    C.make2 ( A.nrows,C_ncols,C_nnz,prows,pcols,pdata );
+    Ccols.clear();
+    Cdata.clear();
+    C.clear();
+
+    C.make ( A.nrows,C_ncols,C_nnz,prows,pcols,pdata );
 
     if ( trans )
         C.transposeIt ( 1 );
 }
 
-void mult_colsA_colsC_denseC ( CSRdouble& A,double *B, int lld_B, int Acolstart, int Ancols, int Ccolstart, int Cncols, 
-			       double *C, int lld_C, bool sum, double alpha ) {
-    int i, j,row, col, C_nnz,C_ncols, *prows;
-    double cij;
+void mult_colsA_colsC_denseC ( CSRdouble& A,double *B, int lld_B, int Acolstart, int Ancols, int Ccolstart, int Cncols,
+                               double *C, int lld_C, bool sum, double alpha ) {
+    int i, j,row, col;
 
     /*assert(Cncols < lld_B);
     assert(Ccolstart+Cncols <= C.ncols);*/
-    
+
     for ( row=0; row<A.nrows; ++row ) {
         for ( col=Ccolstart; col<Ccolstart+Cncols; ++col ) {
             if (!sum)
-	      *(C + row + col * lld_C) = 0;
+                *(C + row + col * lld_C) = 0;
             for ( i=A.pRows[row]; i<A.pRows[row+1]; ++i ) {
                 j = A.pCols[i];
                 if ( j>=Acolstart && j<Acolstart+Ancols )
@@ -335,12 +353,14 @@ void CSRdouble::addBCSR ( CSRdouble& B ) {
 
     memcpy ( pcols, &ABcols[0], nonzeroes*sizeof ( int ) );
     memcpy ( pdata, &ABdata[0], nonzeroes*sizeof ( double ) );
+    ABcols.clear();
+    ABdata.clear();
 
-    /*delete[] pRows;
+    delete[] pRows;
     delete[] pCols;
-    delete[] pData;*/
+    delete[] pData;
 
-    make2 ( B.nrows, B.ncols, nonzeroes, ABprows, pcols, pdata );
+    make ( B.nrows, B.ncols, nonzeroes, ABprows, pcols, pdata );
 }
 
 /**
@@ -393,5 +413,5 @@ void CSRdouble::extendrows ( CSRdouble& B, int startrowB, int nrowsB ) {
     delete[] pCols;
     delete[] pData;
 
-    make2 ( n, B.ncols, nonzeroes, prows, pcols, pdata );
+    make ( n, B.ncols, nonzeroes, prows, pcols, pdata );
 }

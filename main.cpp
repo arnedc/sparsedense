@@ -18,6 +18,7 @@ extern "C" {
                                MPI_Datatype, MPI_Datatype *);
     int MPI_Type_commit(MPI_Datatype *);
     int MPI_File_open(MPI_Comm, char *, int, MPI_Info, MPI_File *);
+    int MPI_File_close(MPI_File *);
     int MPI_File_set_view(MPI_File, MPI_Offset, MPI_Datatype,
                           MPI_Datatype, char *, MPI_Info);
     int MPI_File_write_all(MPI_File, void *, int, MPI_Datatype, MPI_Status *);
@@ -54,12 +55,12 @@ int main(int argc, char **argv) {
     double *D;
     int *DESCD;
     CSRdouble BT_i, B_j, Xsparse, Zsparse, Btsparse;
-    
-    BT_i.allocate(0,0,0);
+
+    /*BT_i.allocate(0,0,0);
     B_j.allocate(0,0,0);
     Xsparse.allocate(0,0,0);
     Zsparse.allocate(0,0,0);
-    Btsparse.allocate(0,0,0);
+    Btsparse.allocate(0,0,0);*/
 
     //Initialise MPI and some MPI-variables
     info = MPI_Init ( &argc, &argv );
@@ -226,9 +227,14 @@ int main(int argc, char **argv) {
             MPI_File_set_view(fh, 0, MPI_DOUBLE, file_type, "native", MPI_INFO_NULL);
             info =MPI_File_write_all(fh, D,buffersize, MPI_DOUBLE,
                                      &status);
+	    MPI_File_close(&fh);
             if(iam==0) {
                 printf("Matrix D (dimension %d) is printed in file %s\n", Dblocks*blocksize,filenameD);
             }
+            if(filenameD != NULL)
+                free(filenameD);
+            filenameD=NULL;
+            //delete[] array_of_gsizes, delete[] array_of_distribs, delete[] array_of_dargs, delete[] array_of_psize;
         }
 
 
@@ -237,55 +243,63 @@ int main(int argc, char **argv) {
         Xsparse.loadFromFile ( filenameX );
         Zsparse.loadFromFile ( filenameZ );
 
+        if(filenameX != NULL)
+            free(filenameX);
+        filenameX=NULL;
+        if(filenameZ != NULL)
+            free(filenameZ);
+        filenameZ=NULL;
+
         smat_t *X_smat, *Z_smat;
-	
-	X_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	Z_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	
+
+        X_smat= (smat_t *) calloc(1,sizeof(smat_t));
+        Z_smat= (smat_t *) calloc(1,sizeof(smat_t));
+
         X_smat = smat_new_from ( Xsparse.nrows,Xsparse.ncols,Xsparse.pRows,Xsparse.pCols,Xsparse.pData,0,0 );
         Z_smat = smat_new_from ( Zsparse.nrows,Zsparse.ncols,Zsparse.pRows,Zsparse.pCols,Zsparse.pData,0,0 );
-	
+
         smat_t *Xt_smat, *Zt_smat;
-	Xt_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	Zt_smat= (smat_t *) calloc(1,sizeof(smat_t));
+        Xt_smat= (smat_t *) calloc(1,sizeof(smat_t));
+        Zt_smat= (smat_t *) calloc(1,sizeof(smat_t));
         Xt_smat = smat_copy_trans ( X_smat );
         Zt_smat = smat_copy_trans ( Z_smat );
 
         CSRdouble Asparse;
         smat_t *XtX_smat, *XtZ_smat, *ZtZ_smat, *lambda_smat, *ZtZlambda_smat;
-	
-	XtX_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	XtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	ZtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
-	
+
+        XtX_smat= (smat_t *) calloc(1,sizeof(smat_t));
+        XtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
+        ZtZ_smat= (smat_t *) calloc(1,sizeof(smat_t));
+
 
         XtX_smat = smat_matmul ( Xt_smat, X_smat );
         XtZ_smat = smat_matmul ( Xt_smat, Z_smat );
         ZtZ_smat = smat_matmul ( Zt_smat,Z_smat );
 
-        
-        /*smat_free(Xt_smat);
+        Xsparse.clear();
+        Zsparse.clear();
+        smat_free(Xt_smat);
         smat_free(Zt_smat);
-        smat_free(X_smat);
+        /*smat_free(X_smat);
         smat_free(Z_smat);*/
 
         CSRdouble Imat;
 
         makeIdentity ( l, Imat );
-	
-	lambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
+
+        lambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
 
         lambda_smat = smat_new_from ( Imat.nrows,Imat.ncols,Imat.pRows,Imat.pCols,Imat.pData,0,0 );
 
         smat_scale_diag ( lambda_smat, -lambda );
-	
-	ZtZlambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
+
+        ZtZlambda_smat= (smat_t *) calloc(1,sizeof(smat_t));
 
         ZtZlambda_smat = smat_add ( lambda_smat, ZtZ_smat );
 
-        /*smat_free(ZtZ_smat);
-        smat_free(lambda_smat);*/
-        
+        smat_free(ZtZ_smat);
+        //smat_free(lambda_smat);
+
 
         smat_to_symmetric_structure ( XtX_smat );
         smat_to_symmetric_structure ( ZtZlambda_smat );
@@ -295,13 +309,11 @@ int main(int argc, char **argv) {
         XtX_sparse.make2 ( XtX_smat->m,XtX_smat->n,XtX_smat->nnz,XtX_smat->ia,XtX_smat->ja,XtX_smat->a );
         XtZ_sparse.make2 ( XtZ_smat->m,XtZ_smat->n,XtZ_smat->nnz,XtZ_smat->ia,XtZ_smat->ja,XtZ_smat->a );
         ZtZ_sparse.make2 ( ZtZlambda_smat->m,ZtZlambda_smat->n,ZtZlambda_smat->nnz,ZtZlambda_smat->ia,ZtZlambda_smat->ja,ZtZlambda_smat->a );
-	
-	/*smat_free(XtX_smat);
-	smat_free(XtZ_smat);
-	smat_free(ZtZlambda_smat);*/
-	Xsparse.clear();
-	Zsparse.clear();
-	Imat.clear();
+
+        /*smat_free(XtX_smat);
+        smat_free(XtZ_smat);
+        smat_free(ZtZlambda_smat);*/
+        Imat.clear();
 
         if (iam==0) {
             cout << "***                                           [  t     t  ] *** " << endl;
@@ -316,12 +328,12 @@ int main(int argc, char **argv) {
         create2x2SymBlockMatrix ( XtX_sparse, XtZ_sparse, ZtZ_sparse, Asparse );
         //Asparse.writeToFile("A_sparse.csr");
 
-        /*smat_free(XtX_smat);
+        smat_free(XtX_smat);
         smat_free(XtZ_smat);
         smat_free(ZtZlambda_smat);
         XtX_sparse.clear();
         XtZ_sparse.clear();
-        ZtZ_sparse.clear();*/
+        ZtZ_sparse.clear();
 
         blacs_barrier_ ( &ICTXT2D,"ALL" );
 
@@ -329,81 +341,69 @@ int main(int argc, char **argv) {
             CSRdouble Dmat, Dblock, Csparse;
             Dblock.nrows=Dblocks * blocksize;
             Dblock.ncols=Dblocks * blocksize;
-	    Dblock.allocate(Dblocks * blocksize, Dblocks * blocksize, 0);
-	    Dmat.allocate(0,0,0);
+            Dblock.allocate(Dblocks * blocksize, Dblocks * blocksize, 0);
+            Dmat.allocate(0,0,0);
             for (i=0; i<Drows; ++i) {
                 for(j=0; j<Dcols; ++j) {
-		  if(iam==3){
-		    printdense(2,2,D,"D3.txt");
-		    printf("Start Dblock: (%d,%d)\n",i*blocksize,j * lld_D * blocksize);
-		    printf("rows and cols of Dblock: %d\n",Dblock.nrows);
-		    printf("Position in grid: (%d,%d)\n",*position, pcol);
-		    printf("Position in D: (%d,%d)\n",( * ( dims) * i + *position ) *blocksize, ( * ( dims+1 ) * j + pcol ) *blocksize);}
-		    //else{
                     dense2CSR_sub(D + i * blocksize + j * lld_D * blocksize,blocksize,blocksize,lld_D,Dblock,( * ( dims) * i + *position ) *blocksize,
                                   ( * ( dims+1 ) * j + pcol ) *blocksize);
                     if ( Dblock.nonzeros>0 ) {
-                        if ( Dmat.nonzeros==0 ){
+                        if ( Dmat.nonzeros==0 ) {
                             Dmat.make2 ( Dblock.nrows,Dblock.ncols,Dblock.nonzeros,Dblock.pRows,Dblock.pCols,Dblock.pData );
-			    printf("Dmat is constructed from Dblock in process %d\n", iam);
-			}
+                        }
                         else {
                             Dmat.addBCSR ( Dblock );
-			    printf("Dblock is added to Dmat in process %d\n", iam);
-			}
+                        }
                     }
-		    
-                    //Dblock.clear();
+
+                    Dblock.clear();
                 }
             }
             blacs_barrier_(&ICTXT2D,"A");
-            if(iam==3){
-	      //Dmat.writeToFile("Dmat_3.txt");
-	    }
             if ( iam!=0 ) {
                 //Each process other than root sends its Dmat to the root process.
                 MPI_Send ( & ( Dmat.nonzeros ),1, MPI_INT,0,iam,MPI_COMM_WORLD );
                 MPI_Send ( & ( Dmat.pRows[0] ),Dmat.nrows + 1, MPI_INT,0,iam+size,MPI_COMM_WORLD );
                 MPI_Send ( & ( Dmat.pCols[0] ),Dmat.nonzeros, MPI_INT,0,iam+2*size,MPI_COMM_WORLD );
                 MPI_Send ( & ( Dmat.pData[0] ),Dmat.nonzeros, MPI_DOUBLE,0,iam+3*size,MPI_COMM_WORLD );
-		//Dmat.clear();
-		//Dblock.clear();
-		printf("process %d sent its Dmat\n",iam);
-		
+                Dmat.clear();
             }
-            else if (iam==0) {
+            else {
                 for ( i=1; i<size; ++i ) {
                     // The root process receives parts of Dmat sequentially from all processes and directly adds them together.
                     int nonzeroes, count;
                     MPI_Recv ( &nonzeroes,1,MPI_INT,i,i,MPI_COMM_WORLD,&status );
-		    MPI_Get_count(&status, MPI_INT, &count);
-		    printf("Process 0 received %d elements of process %d\n",count,i);
+                    /*MPI_Get_count(&status, MPI_INT, &count);
+                    printf("Process 0 received %d elements of process %d\n",count,i);*/
                     if(nonzeroes>0) {
-			printf("Nonzeroes : %d\n ",nonzeroes);
+                        printf("Nonzeroes : %d\n ",nonzeroes);
                         Dblock.allocate ( Dblocks * blocksize,Dblocks * blocksize,nonzeroes );
                         MPI_Recv ( & ( Dblock.pRows[0] ), Dblocks * blocksize + 1, MPI_INT,i,i+size,MPI_COMM_WORLD,&status );
-			MPI_Get_count(&status, MPI_INT, &count);
-		    printf("Process 0 received %d elements of process %d\n",count,i);
+                        /*MPI_Get_count(&status, MPI_INT, &count);
+                        printf("Process 0 received %d elements of process %d\n",count,i);*/
                         MPI_Recv ( & ( Dblock.pCols[0] ),nonzeroes, MPI_INT,i,i+2*size,MPI_COMM_WORLD,&status );
-			MPI_Get_count(&status, MPI_INT, &count);
-		    printf("Process 0 received %d elements of process %d\n",count,i);
+                        /*MPI_Get_count(&status, MPI_INT, &count);
+                        printf("Process 0 received %d elements of process %d\n",count,i);*/
                         MPI_Recv ( & ( Dblock.pData[0] ),nonzeroes, MPI_DOUBLE,i,i+3*size,MPI_COMM_WORLD,&status );
-			MPI_Get_count(&status, MPI_DOUBLE, &count);
-		    printf("Process 0 received %d elements of process %d\n",count,i);
-
+                        /*MPI_Get_count(&status, MPI_DOUBLE, &count);
+                        printf("Process 0 received %d elements of process %d\n",count,i);*/
                         Dmat.addBCSR ( Dblock );
                     }
-                    
                 }
                 //Dmat.writeToFile("D_sparse.csr");
                 Dmat.reduceSymmetric();
                 Btsparse.transposeIt(1);
                 create2x2SymBlockMatrix(Asparse,Btsparse, Dmat, Csparse);
-		Csparse.writeToFile(filenameC);
-		//Csparse.clear();
+                Btsparse.clear();
+                Dmat.clear();
+                Csparse.writeToFile(filenameC);
+                Csparse.clear();
+                if(filenameC != NULL)
+                    free(filenameC);
+                filenameC=NULL;
             }
         }
-        printf("process %d is OK\n",iam);
+        Btsparse.clear();
         blacs_barrier_(&ICTXT2D,"A");
 
         //AB_sol will contain the solution of A*X=B, distributed across the process rows. Processes in the same process row possess the same part of AB_sol
@@ -425,10 +425,10 @@ int main(int argc, char **argv) {
 
         // Each process calculates the Schur complement of the part of D at its disposal. (see src/schur.cpp)
         // The solution of A * Y = B_j is stored in AB_sol (= A^-1 * B_j)
-	blacs_barrier_(&ICTXT2D,"A");
+        blacs_barrier_(&ICTXT2D,"A");
         make_Sij_parallel_denseB ( Asparse, BT_i, B_j, D, lld_D, AB_sol );
-	BT_i.clear();
-	B_j.clear();
+        BT_i.clear();
+        B_j.clear();
 
         //From here on the Schur complement S of D is stored in D
 
@@ -478,6 +478,8 @@ int main(int argc, char **argv) {
             }
         }
 
+        blacs_barrier_(&ICTXT2D,"A");
+
         //Only the root process performs a selected inversion of A.
         if (iam==0) {
 
@@ -488,8 +490,9 @@ int main(int argc, char **argv) {
             ParDiSO pardiso ( pardiso_mtype, pardiso_message_level );
             int number_of_processors = 1;
             char* var = getenv("OMP_NUM_THREADS");
-            if(var != NULL)
+            if(var != NULL) {
                 sscanf( var, "%d", &number_of_processors );
+            }
             else {
                 printf("Set environment OMP_NUM_THREADS to 1");
                 exit(1);
@@ -537,11 +540,24 @@ int main(int argc, char **argv) {
             printf("Dot product in process (0,1) is: %g\n",*(InvD_T_Block+i-1));*/
         }
         blacs_barrier_(&ICTXT2D,"A");
-	if(D != NULL)
-	  free(D);
-	D = NULL;
-
-
+        if(YSrow != NULL)
+            free(YSrow);
+        YSrow = NULL;
+        if(DESCYSROW != NULL)
+            free(DESCYSROW);
+        DESCYSROW = NULL;
+        if(AB_sol != NULL)
+            free(AB_sol);
+        AB_sol = NULL;
+        if(DESCAB_sol != NULL)
+            free(DESCAB_sol);
+        DESCAB_sol = NULL;
+        if(D != NULL)
+            free(D);
+        D = NULL;
+        if(DESCD != NULL)
+            free(DESCD);
+        DESCD = NULL;
 
         //Only in the root process we add the diagonal elements of A^-1
         if (iam ==0) {
@@ -549,8 +565,13 @@ int main(int argc, char **argv) {
                 j=Asparse.pRows[i];
                 *(InvD_T_Block+i) += Asparse.pData[j];
             }
+            Asparse.clear();
             printdense ( Adim+k,1,InvD_T_Block,"diag_inverse_C_parallel.txt" );
         }
+        if(InvD_T_Block != NULL)
+            free(InvD_T_Block);
+        InvD_T_Block = NULL;
+	blacs_gridexit_(&ICTXT2D);
     }
     //cout << iam << " reached end before MPI_Barrier" << endl;
     MPI_Barrier(MPI_COMM_WORLD);
